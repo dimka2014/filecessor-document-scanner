@@ -1,10 +1,11 @@
 import os
+import random
 import time
 
 from flask import Flask, request, jsonify, send_file, after_this_request
 from flask_api import status
 from werkzeug.utils import secure_filename
-
+from base64 import decodestring
 from scanner.scan import scan
 
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
@@ -19,7 +20,14 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
-@app.route('/', methods=['POST'])
+def remove_file(filename):
+    try:
+        os.remove(filename)
+    except Exception as error:
+        app.logger.error("Error removing file", error)
+
+
+@app.route('/document-scanner/file', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
         return jsonify(message='No file part'), status.HTTP_400_BAD_REQUEST
@@ -39,13 +47,35 @@ def upload_file():
     except Exception:
         return jsonify(message='Cannot recognise document'), status.HTTP_400_BAD_REQUEST
 
+    @after_this_request
+    def remove(response):
+        remove_file(filename)
+        return response
+
+    return send_file(filename)
+
+
+@app.route('/document-scanner/base64', methods=['POST'])
+def upload_base64():
+    json = request.get_json(force=True, silent=True)
+    if json is None or 'file' not in json:
+        return jsonify(message='No file part'), status.HTTP_400_BAD_REQUEST
+
+    filename_without_path = secure_filename(str(time.time()) + str(random.randint(0, 1000000000)) + '.jpg')
+    filename = os.path.join(app.config['UPLOAD_FOLDER'], filename_without_path)
+
+    try:
+        with open(filename, "wb") as fh:
+            fh.write(decodestring(json['file']))
+        scan(filename)
+    except TypeError:
+        return jsonify(message='Cannot decode base64 file'), status.HTTP_400_BAD_REQUEST
+    except Exception:
+        return jsonify(message='Cannot recognise document'), status.HTTP_400_BAD_REQUEST
 
     @after_this_request
-    def remove_file(response):
-        try:
-            os.remove(filename)
-        except Exception as error:
-            app.logger.error("Error removing file", error)
+    def remove(response):
+        remove_file(filename)
         return response
 
     return send_file(filename)
