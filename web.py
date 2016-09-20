@@ -5,7 +5,7 @@ import time
 from flask import Flask, request, jsonify, send_file, after_this_request
 from flask_api import status
 from werkzeug.utils import secure_filename
-from base64 import decodestring
+from base64 import decodestring, b64encode
 from scanner.scan import scan
 
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
@@ -25,6 +25,13 @@ def remove_file(filename):
         os.remove(filename)
     except Exception as error:
         app.logger.error("Error removing file", error)
+
+
+def send_file_check_accept(filename):
+    if request.headers.get('Accept') == 'application/json':
+        with open(filename, "rb") as image_file:
+            return jsonify(image=b64encode(image_file.read()))
+    return send_file(filename)
 
 
 @app.route('/document-scanner/file', methods=['POST'])
@@ -52,7 +59,7 @@ def upload_file():
         remove_file(filename)
         return response
 
-    return send_file(filename)
+    return send_file_check_accept(filename)
 
 
 @app.route('/document-scanner/base64', methods=['POST'])
@@ -78,7 +85,7 @@ def upload_base64():
         remove_file(filename)
         return response
 
-    return send_file(filename)
+    return send_file_check_accept(filename)
 
 
 if __name__ == "__main__":
